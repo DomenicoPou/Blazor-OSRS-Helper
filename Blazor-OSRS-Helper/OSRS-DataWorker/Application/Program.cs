@@ -18,7 +18,9 @@ namespace OSRS_DataWorker
             Host.CreateDefaultBuilder(args)
                 .ConfigureServices((hostContext, services) =>
                 {
-                    services.AddHostedService<DataWorker>();
+                    services.AddHostedService<GEWorker>();
+                    services.AddHostedService<ShopWorker>();
+                    services.AddHostedService<ItemWorker>();
                 });
     }
 }

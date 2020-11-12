@@ -1,12 +1,11 @@
 @page "/fetchdata"
-@using Blazor_OSRS_Helper.Shared
+@using Blazor_OSRS_Helper.Shared.Models
+@using Newtonsoft.Json;
 @inject HttpClient Http
 
-<h1>Weather forecast</h1>
+<h1>Runescape Items</h1>
 
-<p>This component demonstrates fetching data from the server.</p>
-
-@if (forecasts == null)
+@if (rsItems == null)
 {
     <p><em>Loading...</em></p>
 }
@@ -15,32 +14,33 @@ else
     <table class="table">
         <thead>
             <tr>
-                <th>Date</th>
-                <th>Temp. (C)</th>
-                <th>Temp. (F)</th>
-                <th>Summary</th>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Description</th>
+                <th>isMember</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var forecast in forecasts)
+            @foreach (var item in rsItems)
             {
-                <tr>
-                    <td>@forecast.Date.ToShortDateString()</td>
-                    <td>@forecast.TemperatureC</td>
-                    <td>@forecast.TemperatureF</td>
-                    <td>@forecast.Summary</td>
-                </tr>
+            <tr>
+                <td>@item.id</td>
+                <td>@item.name</td>
+                <td>@item.description</td>
+                <td>@item.members</td>
+            </tr>
             }
         </tbody>
     </table>
 }
 
 @code {
-    private WeatherForecast[] forecasts;
+    private List<RSItem> rsItems;
 
     protected override async Task OnInitializedAsync()
     {
-        forecasts = await Http.GetFromJsonAsync<WeatherForecast[]>("WeatherForecast");
+        HttpResponseMessage response = await Http.GetAsync("Data/Item");
+        string responseBody = await response.Content.ReadAsStringAsync();
+        rsItems = JsonConvert.DeserializeObject<List<RSItem>>(responseBody);
     }
-
 }

@@ -8,19 +8,23 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Blazor_OSRS_Helper.Shared.Models;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using OSRS_DataWorker.Handlers;
 
 namespace OSRS_DataWorker
 {
-    public class DataWorker : BackgroundService
+    public class ItemWorker : BackgroundService
     {
-        private readonly ILogger<DataWorker> _logger;
+        private readonly ILogger<ItemWorker> _logger;
         private static Dictionary<string, List<int>> itemLookup;
-        public DataWorker(ILogger<DataWorker> logger)
+        private static string itemFile = Path.Combine(ApplicationConfigHandler.config.DownloadLocation, "OSRSItemList.json");
+
+        public ItemWorker(ILogger<ItemWorker> logger)
         {
             _logger = logger;
         }
@@ -29,14 +33,27 @@ namespace OSRS_DataWorker
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
+                _logger.LogInformation("Item running at: {time}", DateTimeOffset.Now);
                 using (WebClient wc = new WebClient())
                 {
+                    Dictionary<int, RSItem> currentItems = ObtainCurrentItems();
+
+                    
                     var json = wc.DownloadString(@"https://www.osrsbox.com/osrsbox-db/items-complete.json");
                     List<RSItem> items = JsonConvert.DeserializeObject<Dictionary<string, RSItem>>(json)
-                        .Values.Where(item => item.duplicate == false).ToList();
+                        .Values.Where(
+                        item => item.duplicate == false
+                        ).ToList();
+
                     itemLookup = items.GroupBy(item => item.name.ToLower().Trim())
-                        .ToDictionary(key => key.Key, value => value.Select(i => i.id).ToList());
+                        .ToDictionary(key => key.Key, value => value.Select(i => i.id ).ToList());
+
+                    items = items.Where(
+                        item => !currentItems.ContainsKey(item.id)
+                        ).ToList();
+
+                    int progress = 0;
+                    int maxProgress = items.Count;
                     Parallel.ForEach(items, (item) => {
                         try
                         {
@@ -63,17 +80,38 @@ namespace OSRS_DataWorker
                         {
 
                         }
+                        currentItems.Add(item.id, item);
+                        progress++;
+                        _logger.LogInformation("Progress {prog} | {maxp}", progress, maxProgress);
                     });
 
-
-                    // Write the string into the config file
-                    using (StreamWriter writer = new StreamWriter($@"AppDomain.CurrentDomain.BaseDirectory\OSRSItemList.json", false, Encoding.Unicode))
+                    if (items.Count > 0)
                     {
-                        writer.Write(JsonConvert.SerializeObject(items, Formatting.Indented)); ;
+                        // Write the string into the config file
+                        using (StreamWriter writer = new StreamWriter(itemFile, false, Encoding.Unicode))
+                        {
+                            writer.Write(JsonConvert.SerializeObject(currentItems.Values, Formatting.Indented));
+                        }
                     }
-
                 }
-                await Task.Delay(1000, stoppingToken);
+                await Task.Delay((1000 * 60 * 60 * 24), stoppingToken); // Wait 24 hrs
+            }
+        }
+
+        private static Dictionary<int, RSItem> ObtainCurrentItems()
+        {
+            if (File.Exists(itemFile))
+            {
+                // Deserialize Json to Object and Return It
+                using (var fileStream = new FileStream(itemFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var textReader = new StreamReader(fileStream))
+                {
+                    string content = textReader.ReadToEnd();
+                    return JsonConvert.DeserializeObject<List<RSItem>>(content).ToDictionary(x => x.id);
+                }
+            } else
+            {
+                return new Dictionary<int, RSItem>();
             }
         }
 
@@ -233,7 +271,6 @@ namespace OSRS_DataWorker
                         materialRequired.Add(materialID, quantity);
                     }
                 }
-                quantityMade = 0;
             }
             return materialRequired;
         }
